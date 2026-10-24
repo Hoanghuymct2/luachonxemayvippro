@@ -1,143 +1,83 @@
-# Hệ Thống Hỗ Trợ Ra Quyết Định (DSS) Gợi Ý Xe Máy (Multi-tier Architecture)
+# Hệ Thống Hỗ Trợ Ra Quyết Định (DSS) Gợi Ý Xe Máy
 
 > **Đề tài:** Xây dựng hệ thống hỗ trợ ra quyết định gợi ý xe máy theo nhu cầu người dùng bằng Weighted K-Nearest Neighbors và Google Gemini.  
-> **Kiến trúc:** Multi-tier (FastAPI RESTful Backend + Streamlit Web Presentation + Gemini LLM Layer + Quantitative KNN Engine).  
 > **Môn học:** Hệ trợ giúp quyết định (Decision Support Systems - DSS)
 
 ---
 
-## 📌 Giới thiệu dự án
+## 📌 Giới thiệu Dự án
 
-Hệ thống hỗ trợ người mua xe máy tại Việt Nam tìm kiếm mẫu xe phù hợp nhất với nhu cầu sử dụng và khả năng tài chính, giải quyết bài toán đa tiêu chí (Multi-Criteria Decision Making - MCDM) thông qua sự kết hợp giữa:
+Dự án là một hệ thống DSS hoàn chỉnh giúp người dùng tìm kiếm mẫu xe máy phù hợp nhất với nhu cầu và khả năng tài chính dựa trên:
 1. **Thuật toán định lượng Weighted KNN (K-Nearest Neighbors):** 
-   - Lọc ngân sách cứng (Hard Budget Ceiling): không phạt xe giá rẻ hơn ngân sách tối đa.
-   - Chuẩn hóa dữ liệu bằng `MinMaxScaler`, mã hóa `One-Hot Encoding` 22 chiều đặc trưng.
-   - Áp dụng ma trận trọng số theo 5 hồ sơ mục đích sử dụng chuẩn.
-   - Quy tắc phá vỡ hòa điểm xác định (Deterministic Tie-breaking) đảm bảo tính minh bạch.
+   - **Lọc trần ngân sách cứng (Hard Budget Ceiling):** Không phạt khoảng cách các xe rẻ hơn ngân sách tối đa của người dùng.
+   - **Chuẩn hóa MinMaxScaler & One-Hot Encoding:** Đưa 22 chiều đặc trưng (4 thuộc tính số + 18 chiều phân loại) về cùng thang đo chuẩn $[0, 1]$.
+   - **Ma trận trọng số theo 5 hồ sơ mục đích:** Phân bổ đều trọng số theo từng chiều đặc trưng ($\sum w_i = 1.0$).
+   - **Quy tắc phá vỡ hòa điểm xác định (Deterministic Tie-breaking):** Ưu tiên năm sản xuất mới hơn, giá bán tiết kiệm hơn và tên xe theo bảng chữ cái.
 2. **Trí tuệ nhân tạo Google Gemini AI:**
-   - Tiếp nhận nhu cầu bằng ngôn ngữ tự nhiên đời thường, bóc tách thành bộ tiêu chí kỹ thuật JSON chuẩn.
-   - Phân tích và sinh lời khuyên giải thích chuyên sâu (150 - 220 từ) dựa trên kết quả tính toán định lượng của thuật toán.
-3. **Kiến trúc phân tầng Microservice (FastAPI + Streamlit):**
-   - Tách biệt hoàn toàn tầng tính toán và dữ liệu (Backend REST API) với tầng hiển thị (Streamlit Web UI).
-   - Bảo mật tuyệt đối: Khóa bí mật API Key được quản lý tập trung ở Server-side, Client không nắm giữ secret.
-   - Cung cấp Swagger UI và OpenAPI Specification chuẩn tại `http://127.0.0.1:8000/docs`.
+   - Tiếp nhận câu nói tự nhiên của người dùng, phân tích ngữ nghĩa và trích xuất thành bộ tiêu chí kỹ thuật cụ thể.
+   - Đóng vai trò chuyên gia phân tích kết quả tính toán định lượng và đưa ra lời khuyên thực tế chuyên sâu (150 - 220 từ).
+   - Tự động chuyển đổi linh hoạt giữa các phiên bản model (`gemini-2.5-flash`, `gemini-3.1-flash-lite`) và có bộ Fallback Regex dự phòng khi offline.
 
 ---
 
-## 📂 Cấu trúc Thư mục Dự án
+## 📂 Cấu trúc Thư mục Tinh Gọn
+
+Dự án được gom gọn vào các file cốt lõi tại thư mục gốc, không phân mảnh thành các thư mục con rườm rà:
 
 ```text
 D:\TT/
-├── data/
-│   └── dataset.csv              # Dữ liệu 225 mẫu xe máy đã làm sạch (Honda, Yamaha, VinFast, ...)
-├── model/
-│   ├── train_export.py          # Pipeline tiền xử lý và trích xuất artifact mô hình
-│   ├── knn_model.joblib         # Scaler, ma trận đặc trưng & dữ liệu ứng viên
-│   └── model_metadata.json      # Metadata mô hình (version 2.0.0, 22 chiều, khoảng giá trị)
-├── api/
-│   ├── __init__.py
-│   ├── schemas.py               # Pydantic schemas (Request, Response DTOs)
-│   ├── services.py              # Business services & Singleton MotoRecommender
-│   └── main.py                  # FastAPI application, CORS, endpoints (/health, /recommend, ...)
-├── core/
-│   ├── __init__.py
-│   └── recommender.py           # Lõi thuật toán Weighted KNN, Hard Filter, Tie-breaking
-├── llm/
-│   ├── __init__.py
-│   └── gemini_helper.py         # Kết nối Gemini SDK, chuyển đổi model linh hoạt, Fallback offline
-├── web/
-│   └── app.py                   # Giao diện người dùng Streamlit thuần REST Client
-├── tests/                       # Toàn bộ 39 bài kiểm thử tự động (100% Passed)
-│   ├── test_api.py              # Kiểm thử toàn diện 8 test cases trên các REST endpoint FastAPI
-│   ├── test_data.py             # Kiểm thử làm sạch và cấu trúc dữ liệu
-│   ├── test_weights.py          # Kiểm thử hồ sơ trọng số & phân bổ One-Hot
-│   ├── test_recommender.py      # Kiểm thử KNN & đối chiếu phép tính giải tích bằng tay
-│   ├── test_gemini_helper.py    # Kiểm thử NLP parser & mock ngoại lệ Gemini
-│   └── test_history.py          # Kiểm thử lưu trữ phiên tư vấn an toàn
-├── docs/                        # Tài liệu học thuật phục vụ báo cáo
-│   ├── ARCHITECTURE.md          # Chi tiết kiến trúc phân tầng, đặc tả API, sơ đồ tương tác
-│   ├── MATHEMATICAL_MODEL.md    # Mô hình toán học, phân tích độ nhạy, tính tay giải tích
-│   └── TEST_REPORT.md           # Báo cáo chi tiết 39 test cases và kịch bản thực nghiệm
-├── app.py                       # Proxy script chuyển tiếp hỗ trợ tương thích ngược
-├── recommender.py               # Proxy module xuất khẩu từ core.recommender
-├── gemini_helper.py             # Proxy module xuất khẩu từ llm.gemini_helper
-├── history.py                   # Quản lý lưu trữ lịch sử truy vấn
-├── requirements.txt             # Danh sách thư viện phụ thuộc
-├── keyapi.txt                   # Chứa Google Gemini API Key (bảo mật server-side)
-├── run.bat                      # 1-Click: Tự động khởi động cả FastAPI và Streamlit
-├── run_api.bat                  # Khởi động riêng Backend FastAPI (Port 8000)
-├── run_web.bat                  # Khởi động riêng Frontend Streamlit (Port 8501)
-└── run_test.bat                 # Chạy toàn bộ 39 unit & API tests với Pytest
+├── dataset.csv            # Dữ liệu gốc 225 mẫu xe máy thuộc 9 hãng xe (Honda, Yamaha, ...)
+├── keyapi.txt             # Lưu trữ Google Gemini API Key (bảo mật cục bộ)
+├── app.py                 # Giao diện Streamlit DSS trực tiếp, mượt mà, đầy đủ tính năng
+├── recommender.py         # Lõi thuật toán Weighted KNN, chuẩn hóa, lọc ngân sách, tie-breaking
+├── gemini_helper.py       # Tích hợp Gemini AI & Fallback NLP, bảo mật key
+├── history.py             # Quản lý lưu trữ lịch sử tư vấn
+├── history.json           # File dữ liệu lịch sử tìm kiếm gần đây
+├── api.py                 # (Tùy chọn) 1 file duy nhất cho FastAPI REST API nếu cần dùng API
+├── requirements.txt       # Danh sách thư viện phụ thuộc tinh gọn
+├── README.md              # Hướng dẫn chi tiết vận hành hệ thống
+├── run.bat                # 1 Cú click chuột khởi động ngay ứng dụng
+├── .gitignore             # Bỏ qua file rác và key
+├── .streamlit/
+│   └── config.toml        # Cấu hình giao diện Streamlit
+└── docs/
+    ├── ARCHITECTURE.md    # Tài liệu kiến trúc hệ thống
+    └── MATHEMATICAL_MODEL.md # Tài liệu mô hình toán học & tính tay giải tích
 ```
 
 ---
 
-## 🚀 Hướng Dẫn Vận Hành Hệ Thống
+## 🚀 Hướng Dẫn Vận Hành
 
-### ⚡ Cách 1: Khởi động 1-Click (Khuyên dùng trên Windows)
-Chỉ cần mở thư mục dự án và click đúp chuột vào:
-- **`run.bat`**: Tự động mở Backend FastAPI tại `http://127.0.0.1:8000` và khởi chạy giao diện Web Streamlit tại `http://localhost:8501`.
-- **`run_test.bat`**: Tự động chạy toàn bộ **39 bài kiểm thử** và hiển thị kết quả.
+### ⚡ Cách 1: Khởi động 1-Click (Đơn giản nhất trên Windows)
+- **Click đúp chuột vào file `run.bat`**: Ứng dụng sẽ tự động khởi chạy và mở ngay giao diện Web tại `http://localhost:8501`.
 
 ---
 
-### 💻 Cách 2: Khởi chạy bằng Dòng Lệnh (PowerShell / Terminal)
-
-#### Bước 1: Cài đặt thư viện phụ thuộc
+### 💻 Cách 2: Khởi chạy bằng Dòng Lệnh (PowerShell)
 Mở PowerShell tại thư mục `D:\TT`:
-```powershell
-pip install -r requirements.txt
-```
 
-#### Bước 2: Huấn luyện và xuất khẩu Model Artifact (nếu có cập nhật dữ liệu)
-```powershell
-python model/train_export.py
-```
+1. **Cài đặt thư viện:**
+   ```powershell
+   pip install -r requirements.txt
+   ```
 
-#### Bước 3: Khởi động Backend REST API (FastAPI)
-```powershell
-python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
-```
-- API Server sẽ hoạt động tại: `http://127.0.0.1:8000`
-- Giao diện tài liệu tương tác **Swagger UI**: `http://127.0.0.1:8000/docs`
-- Giao diện tài liệu **ReDoc**: `http://127.0.0.1:8000/redoc`
-- Kiểm tra sức khỏe hệ thống: `http://127.0.0.1:8000/health`
+2. **Khởi động ứng dụng Streamlit:**
+   ```powershell
+   python -m streamlit run app.py
+   ```
+   *Trình duyệt sẽ tự động mở giao diện tại `http://localhost:8501`.*
 
-#### Bước 4: Khởi động Giao diện Web (Streamlit)
-Mở một cửa sổ PowerShell mới:
-```powershell
-python -m streamlit run web/app.py
-```
-*(Hoặc chạy lệnh tương thích ngược: `streamlit run app.py`)*
-Trình duyệt sẽ tự động mở giao diện tại `http://localhost:8501`.
+3. **(Tùy chọn) Chạy Backend REST API:**
+   Nếu bạn muốn thử nghiệm API FastAPI:
+   ```powershell
+   python -m uvicorn api:app --host 127.0.0.1 --port 8000 --reload
+   ```
+   *Swagger UI tài liệu tương tác: `http://127.0.0.1:8000/docs`.*
 
 ---
 
-## 🧪 Kiểm Thử Tự Động (Automated Testing)
-
-Chạy toàn bộ 39 bài test với Pytest:
-```powershell
-python -m pytest -v
-```
-
-Kết quả: **39 / 39 PASSED** (100% đạt chuẩn chất lượng).
-
----
-
-## 📡 Danh Mục REST API Endpoints
-
-| Phương thức | Đường dẫn | Chức năng chính |
-| :---: | :--- | :--- |
-| `GET` | `/health` | Kiểm tra trạng thái hoạt động của backend, version và số bản ghi |
-| `GET` | `/model-info` | Lấy danh mục 5 hồ sơ, 9 hãng, 2 nhiên liệu, 6 kiểu xe, khoảng giá trị số |
-| `POST` | `/recommend` | Nhận tiêu chí người dùng, lọc ngân sách cứng và xếp hạng Top-K bằng Weighted KNN |
-| `POST` | `/interpret` | Bóc tách ngôn ngữ tự nhiên thành JSON tiêu chí chuẩn bằng Gemini NLP / Regex |
-| `POST` | `/explain` | Sinh văn bản phân tích, so sánh và tư vấn lý do chọn xe dựa trên kết quả Top-K |
-
----
-
-## 🔒 Quản Lý Bảo Mật API Key
-
-1. Hệ thống nạp Google Gemini API Key tự động từ biến môi trường `GEMINI_API_KEY` hoặc file `keyapi.txt` tại thư mục gốc.
-2. Tầng giao diện người dùng (Streamlit) **không chứa và không yêu cầu nhập API Key**, triệt tiêu nguy cơ lộ lọt secret từ phía Client.
-3. API Key tuyệt đối không xuất hiện trong file lịch sử `history.json`, nhật ký terminal hay tài liệu API.
+## 🔒 Bảo Mật Khóa API
+- File `keyapi.txt` chứa Google Gemini API Key được giữ nguyên tại thư mục gốc, hệ thống tự động đọc vào bộ nhớ khi cần.
+- Tuyệt đối không in API Key ra màn hình terminal, giao diện người dùng, log hệ thống hay lưu vào `history.json`.
+- File `keyapi.txt` đã được đưa vào `.gitignore` để ngăn chặn vô tình commit lên Git.
