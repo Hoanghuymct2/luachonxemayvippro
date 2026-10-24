@@ -1,0 +1,27 @@
+[
+  {
+    "timestamp": "2026-10-24 17:00:58",
+    "muc_dich": "Đi làm, đi phố & Gia đình",
+    "tieu_chi": {
+      "Giá(VND)": 50000000.0,
+      "Dung tích cốp (L)": 20.0
+    },
+    "bo_trong_so": {
+      "Giá(VND)": 0.2,
+      "Dung tích cốp (L)": 0.25,
+      "Kiểu xe": 0.2,
+      "Nhiên liệu": 0.15,
+      "Hãng": 0.1,
+      "Công suất tối đa (Kw)": 0.05,
+      "Năm sản xuất": 0.05,
+      "Tình trạng": 0.0
+    },
+    "danh_sach_xe": [
+      "Piaggio Liberty One 125",
+      "Suzuki Burgman Street 125",
+      "SYM Attila 50",
+      "Yadea BuyE",
+      "Yadea E3"
+    ]
+  }
+]
