@@ -216,56 +216,6 @@ brand_default = ext.get("brand") or ext.get("Hãng") or "Không yêu cầu"
 fuel_default = ext.get("fuel") or ext.get("Nhiên liệu") or "Không yêu cầu"
 body_default = ext.get("body_style") or ext.get("Kiểu xe") or "Không yêu cầu"
 
-# Định nghĩa các tùy chọn dung tích cốp và công suất kèm lựa chọn "Không yêu cầu"
-TRUNK_PRESETS: Dict[str, Optional[float]] = {
-    "Không yêu cầu": None,
-    "Cơ bản (Từ 5 Lít trở lên)": 5.0,
-    "Vừa phải (Từ 10 Lít trở lên)": 10.0,
-    "Tiện dụng (Từ 15 Lít trở lên - để 1 mũ BH)": 15.0,
-    "Rộng rãi (Từ 20 Lít trở lên)": 20.0,
-    "Cốp lớn (Từ 25 Lít trở lên - để 2 mũ BH)": 25.0,
-    "Rất lớn (Từ 30 Lít trở lên)": 30.0,
-    "Cực đại (Từ 37 Lít - như Honda Lead / Latte)": 37.0,
-}
-
-POWER_PRESETS: Dict[str, Optional[float]] = {
-    "Không yêu cầu": None,
-    "Xe nhẹ / Tiết kiệm (~ 2 - 4 kW: Xe điện, 50cc)": 3.0,
-    "Tiêu chuẩn / Đi phố (~ 6 kW: Wave, Sirius 110cc)": 6.0,
-    "Khỏe khoắn / Êm ái (~ 8 kW: Vision, Lead 125cc)": 8.0,
-    "Mạnh mẽ / Tăng tốc bốc (~ 11 - 13 kW: Air Blade, Exciter 150-160cc)": 11.0,
-    "Thể thao / Tốc độ cao (>= 15 kW: Phân khối lớn)": 15.0,
-}
-
-# Tự động khớp lựa chọn gợi ý từ AI nếu có
-trunk_default_idx = 0
-raw_trunk = ext.get("min_trunk") or ext.get("trunk_liters") or ext.get("Dung tích cốp (L)")
-if raw_trunk is not None:
-    try:
-        val_t = float(raw_trunk)
-        if val_t > 0:
-            best_diff = float("inf")
-            for i, (k_name, p_val) in enumerate(TRUNK_PRESETS.items()):
-                if p_val is not None and abs(p_val - val_t) < best_diff:
-                    best_diff = abs(p_val - val_t)
-                    trunk_default_idx = i
-    except (ValueError, TypeError):
-        trunk_default_idx = 0
-
-power_default_idx = 0
-raw_power = ext.get("min_power") or ext.get("power_kw") or ext.get("Công suất tối đa (Kw)")
-if raw_power is not None:
-    try:
-        val_p = float(raw_power)
-        if val_p > 0:
-            best_diff = float("inf")
-            for i, (k_name, p_val) in enumerate(POWER_PRESETS.items()):
-                if p_val is not None and abs(p_val - val_p) < best_diff:
-                    best_diff = abs(p_val - val_p)
-                    power_default_idx = i
-    except (ValueError, TypeError):
-        power_default_idx = 0
-
 with st.form("filter_criteria_form"):
     col1, col2, col3 = st.columns(3)
 
@@ -300,23 +250,24 @@ with st.form("filter_criteria_form"):
             options=body_styles_list,
             index=body_styles_list.index(body_default) if body_default in body_styles_list else 0,
         )
-        selected_trunk_label = st.selectbox(
-            "Dung tích cốp mong muốn:",
-            options=list(TRUNK_PRESETS.keys()),
-            index=trunk_default_idx,
-            help="Chọn 'Không yêu cầu' nếu bạn không quan tâm đến kích thước cốp.",
+        min_trunk = st.number_input(
+            "Dung tích cốp tối thiểu (Lít):",
+            min_value=0.0,
+            max_value=50.0,
+            value=float(ext.get("min_trunk") or ext.get("trunk_liters") or ext.get("Dung tích cốp (L)") or 0.0),
+            step=1.0,
+            help="Nhập 0 nếu không yêu cầu / bỏ qua tiêu chí cốp xe.",
         )
-        min_trunk = TRUNK_PRESETS[selected_trunk_label]
 
     with col3:
-        selected_power_label = st.selectbox(
-            "Công suất động cơ mong muốn:",
-            options=list(POWER_PRESETS.keys()),
-            index=power_default_idx,
-            help="Chọn 'Không yêu cầu' nếu bạn không quan tâm đến công suất máy.",
+        min_power = st.number_input(
+            "Công suất động cơ mong muốn (kW):",
+            min_value=0.0,
+            max_value=150.0,
+            value=float(ext.get("min_power") or ext.get("power_kw") or ext.get("Công suất tối đa (Kw)") or 0.0),
+            step=0.5,
+            help="Nhập 0 nếu không yêu cầu / bỏ qua tiêu chí công suất.",
         )
-        min_power = POWER_PRESETS[selected_power_label]
-
         k_results = st.slider(
             "Số lượng xe gợi ý (K):",
             min_value=1,
@@ -328,32 +279,6 @@ with st.form("filter_criteria_form"):
             value=False,
             help="Nếu tích chọn, chỉ gợi ý đúng loại nhiên liệu bạn chọn, loại bỏ hoàn toàn loại khác.",
         )
-
-    # Mục tùy chỉnh nâng cao nếu người dùng muốn nhập số lẻ chính xác
-    with st.expander("⚙️ Tùy chọn nâng cao: Nhập chính xác số Lít cốp hoặc kW công suất (nếu cần)"):
-        adv_col1, adv_col2 = st.columns(2)
-        with adv_col1:
-            custom_trunk = st.number_input(
-                "Nhập số lít cốp cụ thể (nếu khác các mức ở trên):",
-                min_value=0.0,
-                max_value=50.0,
-                value=0.0,
-                step=1.0,
-                help="Để 0.0 nếu muốn dùng theo lựa chọn ở menu phía trên hoặc không yêu cầu.",
-            )
-            if custom_trunk > 0:
-                min_trunk = custom_trunk
-        with adv_col2:
-            custom_power = st.number_input(
-                "Nhập số kW công suất cụ thể (nếu khác các mức ở trên):",
-                min_value=0.0,
-                max_value=150.0,
-                value=0.0,
-                step=0.5,
-                help="Để 0.0 nếu muốn dùng theo lựa chọn ở menu phía trên hoặc không yêu cầu.",
-            )
-            if custom_power > 0:
-                min_power = custom_power
 
     submit_btn = st.form_submit_button("🚀 Gợi Ý Xe Máy Tối Ưu", use_container_width=True)
 
@@ -371,8 +296,8 @@ if submit_btn:
         "Hãng": selected_brand if selected_brand != "Không yêu cầu" else None,
         "Nhiên liệu": selected_fuel if selected_fuel != "Không yêu cầu" else None,
         "Kiểu xe": selected_body if selected_body != "Không yêu cầu" else None,
-        "Công suất tối đa (Kw)": min_power,
-        "Dung tích cốp (L)": min_trunk,
+        "Công suất tối đa (Kw)": min_power if min_power > 0 else None,
+        "Dung tích cốp (L)": min_trunk if min_trunk > 0 else None,
         "Năm sản xuất": float(target_year) if target_year != "Không yêu cầu" else None,
     }
     if mandatory_fuel_check and selected_fuel != "Không yêu cầu":
