@@ -158,14 +158,23 @@ def _call_gemini_with_fallback(
     return None, None
 
 
+DEFAULT_OPTIONS: Dict[str, List[str]] = {
+    "Hãng": ["Honda", "Yamaha", "Suzuki", "SYM", "Piaggio", "Vespa", "VinFast", "Yadea", "Dat Bike"],
+    "Nhiên liệu": ["Xăng", "Điện"],
+    "Kiểu xe": ["Tay ga", "Xe điện", "Xe côn tay", "Xe số", "Tay ga (50cc)", "Xe số (50cc)"],
+    "Tình trạng": ["Mới"],
+}
+
 # ---------------------------------------------------------------------------
 # 1. Fallback phân tích nhu cầu bằng Regex và Từ khóa tiếng Việt
 # ---------------------------------------------------------------------------
-def _parse_fallback(text: str, options: Dict[str, List[str]]) -> Dict[str, Any]:
+def _parse_fallback(text: str, options: Optional[Dict[str, List[str]]] = None) -> Dict[str, Any]:
     """
     Phân tích nhu cầu tự nhiên bằng luật Regex và từ khóa tiếng Việt.
     Dùng khi không có API key hoặc Gemini API gặp lỗi.
     """
+    if options is None:
+        options = DEFAULT_OPTIONS
     lower = text.lower()
 
     # 1. Nhận diện Mục đích sử dụng
@@ -262,13 +271,19 @@ def _parse_fallback(text: str, options: Dict[str, List[str]]) -> Dict[str, Any]:
         "purpose": purpose,
         "budget_trieu": budget_trieu,
         "budget_vnd": budget_vnd,
+        "max_budget": budget_vnd,
+        "target_price": None,
         "power_kw": power_kw,
+        "min_power": power_kw,
         "trunk_liters": trunk_liters,
+        "min_trunk": trunk_liters,
         "year": year,
         "brand": brand,
         "fuel": fuel,
         "body": body,
+        "body_style": body,
         "condition": "Mới",
+        "k": 5,
         "source": "fallback",
         "inferred_trunk": inferred_trunk,
     }
@@ -279,7 +294,7 @@ def _parse_fallback(text: str, options: Dict[str, List[str]]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def parse_need(
     text: str,
-    options: Dict[str, List[str]],
+    options: Optional[Dict[str, List[str]]] = None,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -288,6 +303,8 @@ def parse_need(
     Nếu Gemini khả dụng và thành công, trả về kết quả từ Gemini.
     Nếu thất bại hoặc không có API key, tự động chuyển sang _parse_fallback.
     """
+    if options is None:
+        options = DEFAULT_OPTIONS
     text = (text or "").strip()
     if not text:
         return _parse_fallback("", options)
@@ -400,13 +417,19 @@ Chỉ trả về DUY NHẤT một khối JSON hợp lệ theo đúng cấu trúc
             "purpose": purpose,
             "budget_trieu": budget_trieu,
             "budget_vnd": budget_vnd,
+            "max_budget": budget_vnd,
+            "target_price": None,
             "power_kw": power_kw,
+            "min_power": power_kw,
             "trunk_liters": trunk_liters,
+            "min_trunk": trunk_liters,
             "year": year,
             "brand": brand,
             "fuel": fuel,
             "body": body,
+            "body_style": body,
             "condition": "Mới",
+            "k": 5,
             "source": f"gemini ({used_model})",
             "inferred_trunk": False,
         }
@@ -485,31 +508,50 @@ def _explain_fallback(
 # 4. Hàm giải thích kết quả gợi ý
 # ---------------------------------------------------------------------------
 def explain_results(
-    purpose: str,
-    weights: Dict[str, float],
-    query: Dict[str, Any],
-    result: Union[pd.DataFrame, List[Dict[str, Any]]],
+    top_candidates: Optional[Union[pd.DataFrame, List[Dict[str, Any]]]] = None,
+    user_need: Optional[Union[str, Dict[str, Any]]] = None,
+    purpose: str = DEFAULT_PURPOSE,
+    weights: Optional[Dict[str, float]] = None,
+    query: Optional[Dict[str, Any]] = None,
+    result: Optional[Union[pd.DataFrame, List[Dict[str, Any]]]] = None,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
-) -> str:
+    **kwargs: Any,
+) -> Tuple[str, str]:
     """
     Tạo đoạn văn giải thích kết quả gợi ý (150 - 220 từ) bằng tiếng Việt.
     Dữ liệu hoàn toàn xuất phát từ kết quả thật của Weighted KNN.
+    Trả về Tuple: (văn_bản_giải_thích, nguồn_phân_tích: 'gemini' | 'fallback')
     """
-    if isinstance(result, pd.DataFrame):
-        if result.empty:
-            return _explain_fallback(purpose, weights, query, result)
-        rows = [r.to_dict() for _, r in result.iterrows()]
-    elif isinstance(result, list):
-        if not result:
-            return _explain_fallback(purpose, weights, query, result)
-        rows = result
+    actual_result = top_candidates if top_candidates is not None else result
+    if actual_result is None:
+        actual_result = []
+
+    if weights is None:
+        weights = PURPOSE_WEIGHTS.get(purpose, PURPOSE_WEIGHTS[DEFAULT_PURPOSE])
+
+    if query is None:
+        if isinstance(user_need, dict):
+            query = user_need
+        elif user_need:
+            query = {"Nhu cầu": str(user_need)}
+        else:
+            query = {}
+
+    if isinstance(actual_result, pd.DataFrame):
+        if actual_result.empty:
+            return _explain_fallback(purpose, weights, query, actual_result), "fallback"
+        rows = [r.to_dict() for _, r in actual_result.iterrows()]
+    elif isinstance(actual_result, list):
+        if not actual_result:
+            return _explain_fallback(purpose, weights, query, actual_result), "fallback"
+        rows = actual_result
     else:
-        return _explain_fallback(purpose, weights, query, result)
+        return _explain_fallback(purpose, weights, query, actual_result), "fallback"
 
     client = get_gemini_client(api_key)
     if not client:
-        return _explain_fallback(purpose, weights, query, rows)
+        return _explain_fallback(purpose, weights, query, rows), "fallback"
 
     top1 = rows[0]
     top1_name = top1.get("Tên xe") or top1.get("name")
@@ -575,6 +617,9 @@ CÁC QUY TẮC NGHIÊM NGẶT:
     )
 
     if raw_response and len(raw_response.strip()) >= 50:
-        return raw_response.strip()
+        return raw_response.strip(), "gemini"
 
-    return _explain_fallback(purpose, weights, query, rows)
+    return _explain_fallback(purpose, weights, query, rows), "fallback"
+
+
+explain_recommendation = explain_results

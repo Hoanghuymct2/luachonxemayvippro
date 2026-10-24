@@ -226,3 +226,4 @@ def explain_recommendations(req: ExplainRequest) -> ExplainResponse:
         purpose=req.purpose or DEFAULT_PURPOSE,
     )
     return ExplainResponse(explanation=explanation, source=source)
+
