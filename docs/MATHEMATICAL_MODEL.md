@@ -68,17 +68,27 @@ $$\sum_{i=1}^{n} w_i = \sum_{k=1}^{4} W_{\text{num}, k} + \sum_{g \in \text{Cat}
 
 ---
 
-## 5. Lọc Ngân sách Cứng (Hard Budget Filter)
+## 5. Phân Biệt Trần Ngân Sách Cứng (Budget Ceiling) vs Giá Mục Tiêu (Target Price)
 
-### 5.1. Công thức
-Nếu người dùng cung cấp ngân sách tối đa $B$:
+Trong các hệ thống DSS kinh doanh tài sản giá trị, có sự phân biệt rõ ràng giữa **ràng buộc biên (Constraint)** và **mục tiêu tối ưu (Objective)**:
 
-$$D_{\text{filtered}} = \{x \in D \mid Price(x) \le B\}$$
+### 5.1. Trần ngân sách tối đa ($B_{\max}$)
+Khi người dùng nhập "Ngân sách tối đa: 45 triệu VNĐ", đây là một **ràng buộc cứng (Hard Constraint)**:
 
-### 5.2. Vai trò trong Hệ hỗ trợ quyết định
-Trong thực tế tài chính cá nhân, ngân sách là một **ràng buộc giới hạn cứng** (Hard constraint), không phải một thuộc tính có thể bù trừ (Non-compensatory criterion). Một chiếc xe vượt quá ngân sách khả năng chi trả của người mua thì dù có tiết kiệm xăng hay cốp rộng đến đâu cũng là một phương án không khả thi (Infeasible alternative). Vì vậy, hệ thống lọc loại bỏ xe vượt ngân sách trước khi tính khoảng cách.
+$$D_{\text{filtered}} = \{x \in D \mid Price(x) \le B_{\max}\}$$
 
-Đồng thời, mức giá $B$ được đặt làm điểm mục tiêu trong chiều `Giá(VND)` của vector truy vấn $q$, giúp thuật toán ưu tiên những xe có mức giá tiệm cận tốt nhất dưới ngưỡng $B$.
+Các xe có giá vượt quá $B_{\max}$ bị loại bỏ hoàn toàn.  
+**Quan trọng:** Trong không gian khoảng cách KNN, một chiếc xe có giá 30 triệu hoàn toàn thỏa mãn ngân sách và KHÔNG bị phạt khoảng cách vì rẻ hơn 45 triệu. 
+
+### 5.2. Giá mục tiêu cụ thể ($P_{\text{target}}$)
+Chỉ khi người dùng chủ động yêu cầu một mức giá mong muốn cụ thể (ví dụ: "tôi muốn tìm xe đúng tầm giá 50 triệu"), khoảng cách thành phần giá mới được tính:
+
+$$d_{\text{price}}(x) = \left(\frac{Price(x) - x_{\min}}{x_{\max} - x_{\min}} - \frac{P_{\text{target}} - x_{\min}}{x_{\max} - x_{\min}}\right)^2$$
+
+### 5.3. Khoảng giá (Price Range: $B_{\min} \le Price \le B_{\max}$)
+Hệ thống cho phép người dùng đặt cả cận dưới $B_{\min}$ và cận trên $B_{\max}$:
+
+$$D_{\text{filtered}} = \{x \in D \mid B_{\min} \le Price(x) \le B_{\max}\}$$
 
 ---
 
@@ -88,33 +98,28 @@ Với vector xe $p = (p_1, p_2, \dots, p_{22})$ và vector truy vấn $q = (q_1,
 
 $$d_w(p, q) = \sqrt{\sum_{i=1}^{22} w_i (p_i - q_i)^2}$$
 
-Thuật toán sắp xếp danh sách ứng viên theo thứ tự khoảng cách tăng dần:
+---
 
-$$\text{Top-K} = \operatorname{arg\,sort}_{x \in D_{\text{filtered}}}(d_w(x, q))[:k]$$
+## 7. Quy tắc Phá vỡ Hòa điểm Xác định (Deterministic Tie-breaking)
+
+Khi hai ứng viên $p^{(a)}$ và $p^{(b)}$ có khoảng cách toán học trùng khớp nhau ($|d_w(p^{(a)}, q) - d_w(p^{(b)}, q)| < 10^{-6}$), hệ thống áp dụng quy tắc sắp xếp đa tiêu chí xác định:
+1. **Năm sản xuất mới hơn được ưu tiên:** $\text{Year}(p^{(a)}) > \text{Year}(p^{(b)})$
+2. **Giá bán thấp hơn (tiết kiệm hơn) được ưu tiên:** $\text{Price}(p^{(a)}) < \text{Price}(p^{(b)})$
+3. **Thứ tự bảng chữ cái tên xe:** $\text{Model}(p^{(a)}) < \text{Model}(p^{(b)})$
+
+Điều này đảm bảo kết quả gợi ý luôn hoàn toàn lặp lại được (reproducible) và minh bạch trong khoa học hỗ trợ ra quyết định.
 
 ---
 
-## 7. Điểm Phù hợp Tương đối (Relative Fit Score)
+## 8. Điểm Phù hợp Tương đối (Relative Fit Score)
 
-### 7.1. Công thức quy đổi
+### 8.1. Công thức quy đổi
 
 $$\text{Score} = \operatorname{round}\left(\frac{1}{1 + d_w} \times 100, 1\right)$$
 
-### 7.2. Phân biệt Bản chất giữa Score và Xác suất Thống kê
+### 8.2. Phân biệt Bản chất giữa Score và Xác suất Thống kê
 - **Score $\in (0, 100]$%:** Khi $d_w = 0$ (xe trùng khớp hoàn toàn mọi tiêu chí), $\text{Score} = 100\%$. Khi $d_w$ tăng dần, $\text{Score}$ giảm dần về 0 một cách mượt mà và đơn điệu.
 - **Không phải xác suất thống kê:** Điểm phù hợp KHÔNG đại diện cho xác suất người dùng sẽ mua xe, cũng KHÔNG phải là phân phối xác suất (tổng điểm của các xe không bằng 1). Đây là **chỉ số độ gần gũi tương đối (Proximity Metric)** được chuẩn hóa để người dùng dễ quan sát trực quan.
-
----
-
-## 8. Vector Truy vấn và Giá trị Trung tính 0.5
-
-### 8.1. Cơ chế mã hóa truy vấn
-- **Tiêu chí số không nhập (`None`):** Được mã hóa thành $q'_i = 0.5$ trong không gian chuẩn hóa.
-- **Tiêu chí phân loại không chọn (`Không yêu cầu`):** Toàn bộ các chiều One-Hot của nhóm đó được đặt bằng $0.0$.
-
-### 8.2. Ưu điểm và Hạn chế của Giá trị 0.5
-- **Ưu điểm:** Giữ chiều dài vector cố định 22 chiều, không làm gãy phép nhân ma trận vector hóa NumPy. Giá trị 0.5 nằm chính giữa đoạn $[0, 1]$, giúp khoảng sai lệch tối đa với bất kỳ xe nào trong dataset không bao giờ vượt quá $|x' - 0.5| \le 0.5$.
-- **Hạn chế:** Giá trị 0.5 tương ứng với trung vị hình học của khoảng giá trị Min-Max chứ không nhất thiết là giá trị phổ biến nhất trong phân phối thực tế. Do đó, các tiêu chí người dùng chưa nhập tuyệt đối **không được xuất hiện trong phần giải thích tiêu chí**, tránh gây hiểu lầm rằng người dùng đã chủ ý yêu cầu giá trị đó.
 
 ---
 
@@ -190,4 +195,3 @@ Giá chuẩn hóa:
 - Khi chuyển đổi giữa hồ sơ **"Học sinh, Sinh viên"** (Giá chiếm 35%, Kiểu xe 20%) sang **"Thời trang, Sang trọng & Cao cấp"** (Hãng chiếm 25%, Kiểu xe 25%, Giá chỉ chiếm 10%):
   - Với cùng mức ngân sách 70 triệu, mẫu xe `SYM Tuscany 150` (Top 1 sinh viên do giá 45 triệu hợp lý) sẽ nhường vị trí dẫn đầu cho các dòng xe thời trang thương hiệu cao như `Vespa Sprint` hoặc `Piaggio Liberty` do trọng số Hãng xe được đẩy cao từ 5% lên 25%.
   - Sự dịch chuyển thứ hạng phản ánh đúng quy luật DSS: thứ hạng nhạy bén với sự thay đổi trong mức độ ưu tiên của người ra quyết định, nhưng ổn định và nhất quán trong cùng một hồ sơ trọng số.
-

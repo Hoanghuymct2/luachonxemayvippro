@@ -95,8 +95,8 @@ def test_parse_need_mock_gemini_success(mock_options):
       "condition": "Mới"
     }
     """
-    with patch("gemini_helper.get_gemini_client") as mock_get_client, \
-         patch("gemini_helper._call_gemini_with_fallback", return_value=(valid_gemini_json, "gemini-mock")):
+    with patch("llm.gemini_helper.get_gemini_client") as mock_get_client, \
+         patch("llm.gemini_helper._call_gemini_with_fallback", return_value=(valid_gemini_json, "gemini-mock")):
         mock_get_client.return_value = MagicMock()
 
         res = gh.parse_need("Em là sinh viên tìm xe ga Honda 40 triệu", mock_options, api_key="dummy_key")
@@ -113,8 +113,8 @@ def test_parse_need_mock_gemini_success(mock_options):
 def test_parse_need_mock_gemini_corrupt_json(mock_options):
     """Kiểm tra parse_need tự động chuyển fallback khi Gemini trả JSON hỏng."""
     corrupt_output = "Xin chào! Đây là xe tôi nghĩ bạn thích: {bad_json..."
-    with patch("gemini_helper.get_gemini_client") as mock_get_client, \
-         patch("gemini_helper._call_gemini_with_fallback", return_value=(corrupt_output, "gemini-mock")):
+    with patch("llm.gemini_helper.get_gemini_client") as mock_get_client, \
+         patch("llm.gemini_helper._call_gemini_with_fallback", return_value=(corrupt_output, "gemini-mock")):
         mock_get_client.return_value = MagicMock()
 
         res = gh.parse_need("Em là sinh viên cần xe 30 triệu", mock_options, api_key="dummy_key")
@@ -126,8 +126,8 @@ def test_parse_need_mock_gemini_corrupt_json(mock_options):
 
 def test_parse_need_mock_gemini_exception(mock_options):
     """Kiểm tra parse_need tự động chuyển fallback khi phát sinh exception."""
-    with patch("gemini_helper.get_gemini_client") as mock_get_client, \
-         patch("gemini_helper._call_gemini_with_fallback", side_effect=RuntimeError("Mạng lỗi")):
+    with patch("llm.gemini_helper.get_gemini_client") as mock_get_client, \
+         patch("llm.gemini_helper._call_gemini_with_fallback", side_effect=RuntimeError("Mạng lỗi")):
         mock_get_client.return_value = MagicMock()
 
         res = gh.parse_need("Em cần tìm xe đi làm 50 triệu", mock_options, api_key="dummy_key")
@@ -139,7 +139,8 @@ def test_parse_need_mock_gemini_exception(mock_options):
 
 def test_parse_need_no_api_key(mock_options):
     """Kiểm tra khi không có API key thì dùng fallback trực tiếp."""
-    with patch("gemini_helper.get_gemini_api_key", return_value=None):
+    with patch("llm.gemini_helper.get_gemini_api_key", return_value=None), \
+         patch("llm.gemini_helper.get_gemini_client", return_value=None):
         res = gh.parse_need("Em cần tìm xe 45 triệu", mock_options)
         assert res["source"] == "fallback"
         assert res["budget_trieu"] == 45.0
