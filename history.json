@@ -186,5 +186,36 @@
       "Honda Wave Alpha (Bản cổ điển)",
       "Honda Blade (Bản đặc biệt)"
     ]
+  },
+  {
+    "timestamp": "2026-10-24 19:13:25",
+    "muc_dich": "Đi phượt, Thể thao & Đam mê tốc độ",
+    "tieu_chi": {
+      "max_budget": 55000000.0,
+      "is_budget_only": true,
+      "prefer_economy": true,
+      "Hãng": "Honda",
+      "Nhiên liệu": "Xăng",
+      "Kiểu xe": "Xe côn tay",
+      "Công suất tối đa (Kw)": 11.5,
+      "Năm sản xuất": 2024.0
+    },
+    "bo_trong_so": {
+      "Công suất tối đa (Kw)": 0.35,
+      "Kiểu xe": 0.25,
+      "Giá(VND)": 0.1,
+      "Nhiên liệu": 0.1,
+      "Hãng": 0.1,
+      "Dung tích cốp (L)": 0.05,
+      "Năm sản xuất": 0.05,
+      "Tình trạng": 0.0
+    },
+    "danh_sach_xe": [
+      "Honda WINNER X (Bản tiêu chuẩn)",
+      "Honda WINNER X (Bản đặc biệt)",
+      "Honda WINNER X (Bản thể thao)",
+      "Yamaha Exciter 155 VVA (Bản tiêu chuẩn)",
+      "Suzuki Raider R150 (Bản tiêu chuẩn)"
+    ]
   }
 ]
