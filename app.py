@@ -452,3 +452,4 @@ with col_data:
         st.write(f"- **Khoảng giá:** {int(stats['price_min']):,} - {int(stats['price_max']):,} VNĐ".replace(",", "."))
         st.write(f"- **Dung tích cốp:** {stats['trunk_min']}L - {stats['trunk_max']}L")
         st.write(f"- **Số chiều đặc trưng:** {stats['feature_dims']} chiều (MinMaxScaler + One-Hot)")
+
