@@ -154,5 +154,37 @@
       "Honda Vision (Bản cao cấp)",
       "Honda Vision (Bản đặc biệt)"
     ]
+  },
+  {
+    "timestamp": "2026-10-24 18:42:39",
+    "muc_dich": "Học sinh, Sinh viên",
+    "tieu_chi": {
+      "max_budget": 25000000.0,
+      "is_budget_only": true,
+      "prefer_economy": true,
+      "Hãng": "Honda",
+      "Nhiên liệu": "Xăng",
+      "Kiểu xe": "Xe số",
+      "Công suất tối đa (Kw)": 6.5,
+      "Dung tích cốp (L)": 10.0,
+      "Năm sản xuất": 2024.0
+    },
+    "bo_trong_so": {
+      "Giá(VND)": 0.35,
+      "Kiểu xe": 0.2,
+      "Dung tích cốp (L)": 0.15,
+      "Nhiên liệu": 0.15,
+      "Hãng": 0.05,
+      "Công suất tối đa (Kw)": 0.05,
+      "Năm sản xuất": 0.05,
+      "Tình trạng": 0.0
+    },
+    "danh_sach_xe": [
+      "Honda Wave Alpha 110 (Bản tiêu chuẩn)",
+      "Honda Wave Alpha 110 (Bản đặc biệt)",
+      "Honda Blade (Bản tiêu chuẩn)",
+      "Honda Wave Alpha (Bản cổ điển)",
+      "Honda Blade (Bản đặc biệt)"
+    ]
   }
 ]
