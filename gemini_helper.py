@@ -166,11 +166,196 @@ DEFAULT_OPTIONS: Dict[str, List[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Fallback phân tích nhu cầu bằng Regex và Từ khóa tiếng Việt
+# 1. Hàm suy luận và dự đoán thông số theo ngữ cảnh (Contextual Defaults)
+# ---------------------------------------------------------------------------
+def _infer_contextual_defaults(
+    extracted: Dict[str, Any],
+    user_text: str,
+    options: Optional[Dict[str, List[str]]] = None
+) -> Tuple[Dict[str, Any], str, List[str]]:
+    """
+    Tự động suy luận/dự đoán các thông số còn thiếu dựa trên ngữ cảnh và thực tế thị trường Việt Nam.
+    Đảm bảo không bao giờ để các thông số quan trọng là None khi người dùng nói chung chung.
+    Trả về: (extracted_dict, inferred_reason_str, inferred_fields_list)
+    """
+    if options is None:
+        options = DEFAULT_OPTIONS
+    lower = user_text.lower()
+    inferred_fields = []
+
+    # 1. Mục đích sử dụng (purpose)
+    purpose = extracted.get("purpose")
+    if not purpose or purpose not in PURPOSE_WEIGHTS:
+        if re.search(r"\b(sinh viên|học sinh|đi học|sv|tân sinh viên)\b", lower):
+            purpose = "Học sinh, Sinh viên"
+        elif re.search(r"\b(dịch vụ|grab|be|giao hàng|ship|chạy xe ôm|shipper|xe ôm công nghệ)\b", lower):
+            purpose = "Chạy dịch vụ (Grab/Be/Giao hàng)"
+        elif re.search(r"\b(phượt|thể thao|tốc độ|phân khối|bốc|mạnh mẽ|đua|côn tay|nam tính|bụi)\b", lower):
+            purpose = "Đi phượt, Thể thao & Đam mê tốc độ"
+        elif re.search(r"\b(thời trang|sang trọng|cao cấp|dạo phố|sang|quý phái|thanh lịch|sh|vespa|đẳng cấp)\b", lower):
+            purpose = "Thời trang, Sang trọng & Cao cấp"
+        else:
+            purpose = "Đi làm, đi phố & Gia đình"
+        extracted["purpose"] = purpose
+
+    # 2. Nhiên liệu (fuel)
+    fuel = extracted.get("fuel")
+    if not fuel or fuel not in options.get("Nhiên liệu", []):
+        if any(k in lower for k in ["điện", "xe điện", "pin", "xanh", "môi trường"]):
+            fuel = "Điện"
+        else:
+            fuel = "Xăng"
+        extracted["fuel"] = fuel
+        inferred_fields.append("Nhiên liệu")
+
+    # 3. Kiểu dáng xe (body)
+    body = extracted.get("body") or extracted.get("body_style")
+    if not body or body not in options.get("Kiểu xe", []):
+        if fuel == "Điện":
+            body = "Xe điện"
+        elif purpose == "Học sinh, Sinh viên":
+            if any(k in lower for k in ["50cc", "cấp 3", "chưa có bằng", "học sinh cấp 3"]):
+                body = "Xe số (50cc)"
+            elif any(k in lower for k in ["nữ", "gái"]):
+                body = "Tay ga"
+            else:
+                body = "Xe số"
+        elif purpose == "Chạy dịch vụ (Grab/Be/Giao hàng)":
+            body = "Xe số"
+        elif purpose == "Đi phượt, Thể thao & Đam mê tốc độ":
+            body = "Xe côn tay"
+        elif purpose in ["Thời trang, Sang trọng & Cao cấp", "Đi làm, đi phố & Gia đình"]:
+            body = "Tay ga"
+        else:
+            body = "Xe số"
+        extracted["body"] = body
+        extracted["body_style"] = body
+        inferred_fields.append("Kiểu xe")
+
+    # 4. Ngân sách (budget_trieu)
+    budget_trieu = extracted.get("budget_trieu")
+    if budget_trieu is None or budget_trieu <= 0:
+        if purpose == "Học sinh, Sinh viên":
+            budget_trieu = 25.0
+        elif purpose == "Chạy dịch vụ (Grab/Be/Giao hàng)":
+            budget_trieu = 25.0
+        elif purpose == "Đi phượt, Thể thao & Đam mê tốc độ":
+            budget_trieu = 55.0
+        elif purpose == "Thời trang, Sang trọng & Cao cấp":
+            budget_trieu = 85.0
+        elif purpose == "Đi làm, đi phố & Gia đình":
+            if any(k in lower for k in ["chợ", "nữ", "gái", "con", "mẹ", "chị em", "bỉm"]):
+                budget_trieu = 42.0
+            elif any(k in lower for k in ["văn phòng", "công sở", "đi làm"]):
+                budget_trieu = 48.0
+            else:
+                budget_trieu = 45.0
+        else:
+            budget_trieu = 40.0
+
+        if fuel == "Điện" and purpose not in ["Thời trang, Sang trọng & Cao cấp"]:
+            budget_trieu = 35.0
+
+        extracted["budget_trieu"] = budget_trieu
+        inferred_fields.append("Ngân sách")
+
+    budget_vnd = budget_trieu * 1_000_000.0 if budget_trieu else None
+    extracted["budget_vnd"] = budget_vnd
+    extracted["max_budget"] = budget_vnd
+
+    # 5. Hãng xe (brand)
+    brand = extracted.get("brand")
+    valid_brands = options.get("Hãng", [])
+    if not brand or brand not in valid_brands:
+        if fuel == "Điện":
+            brand = "VinFast"
+        elif purpose == "Thời trang, Sang trọng & Cao cấp":
+            if any(k in lower for k in ["vespa", "piaggio", "ý", "quý phái", "cổ điển"]):
+                brand = "Vespa"
+            else:
+                brand = "Honda"
+        elif purpose == "Đi phượt, Thể thao & Đam mê tốc độ":
+            if any(k in lower for k in ["yamaha", "exciter"]):
+                brand = "Yamaha"
+            else:
+                brand = "Honda"
+        else:
+            brand = "Honda"
+        extracted["brand"] = brand
+        inferred_fields.append("Hãng xe")
+
+    # 6. Dung tích cốp (trunk_liters)
+    trunk_liters = extracted.get("trunk_liters")
+    if trunk_liters is None or trunk_liters < 0:
+        if body == "Tay ga":
+            if any(k in lower for k in ["chợ", "con", "nữ", "đồ", "lead", "cốp to", "cốp rộng"]):
+                trunk_liters = 28.0
+            else:
+                trunk_liters = 20.0
+        elif body in ["Xe số", "Xe số (50cc)"]:
+            trunk_liters = 10.0
+        elif body == "Xe côn tay":
+            trunk_liters = 0.0
+        elif body == "Xe điện":
+            trunk_liters = 18.0
+        else:
+            trunk_liters = 12.0
+        extracted["trunk_liters"] = trunk_liters
+        extracted["min_trunk"] = trunk_liters
+        inferred_fields.append("Dung tích cốp")
+    else:
+        extracted["min_trunk"] = trunk_liters
+
+    # 7. Công suất (power_kw)
+    power_kw = extracted.get("power_kw")
+    if power_kw is None or power_kw < 0:
+        if body == "Xe côn tay" or purpose == "Đi phượt, Thể thao & Đam mê tốc độ":
+            power_kw = 11.5
+        elif purpose == "Thời trang, Sang trọng & Cao cấp":
+            power_kw = 9.5
+        elif body == "Tay ga":
+            power_kw = 8.0
+        elif "50cc" in str(body):
+            power_kw = 2.5
+        else:
+            power_kw = 6.5
+        extracted["power_kw"] = power_kw
+        extracted["min_power"] = power_kw
+        inferred_fields.append("Công suất")
+    else:
+        extracted["min_power"] = power_kw
+
+    # 8. Năm sản xuất (year)
+    year = extracted.get("year")
+    if year is None:
+        year = 2024
+        extracted["year"] = year
+        inferred_fields.append("Năm sản xuất")
+
+    extracted["condition"] = "Mới"
+    extracted["k"] = extracted.get("k", 5)
+
+    # 9. Lý do suy luận (inferred_reason)
+    reason = extracted.get("inferred_reason")
+    if not reason:
+        reason = (
+            f"Dựa trên ngữ cảnh nhu cầu '{purpose}', AI đã tự động dự đoán: "
+            f"Ngân sách ~{budget_trieu:.0f} triệu, kiểu xe {body} hãng {brand}, "
+            f"nhiên liệu {fuel}, cốp {trunk_liters:.0f}L, công suất {power_kw:.1f}kW "
+            f"phù hợp nhất với thực tế thị trường xe máy Việt Nam."
+        )
+    extracted["inferred_reason"] = reason
+    extracted["inferred_fields"] = inferred_fields
+
+    return extracted, reason, inferred_fields
+
+
+# ---------------------------------------------------------------------------
+# 2. Fallback phân tích nhu cầu bằng Regex và Dự đoán thông số theo ngữ cảnh
 # ---------------------------------------------------------------------------
 def _parse_fallback(text: str, options: Optional[Dict[str, List[str]]] = None) -> Dict[str, Any]:
     """
-    Phân tích nhu cầu tự nhiên bằng luật Regex và từ khóa tiếng Việt.
+    Phân tích nhu cầu tự nhiên bằng luật Regex kết hợp suy luận ngữ cảnh tiếng Việt.
     Dùng khi không có API key hoặc Gemini API gặp lỗi.
     """
     if options is None:
@@ -178,13 +363,13 @@ def _parse_fallback(text: str, options: Optional[Dict[str, List[str]]] = None) -
     lower = text.lower()
 
     # 1. Nhận diện Mục đích sử dụng
-    if re.search(r"\b(sinh viên|học sinh|đi học)\b", lower):
+    if re.search(r"\b(sinh viên|học sinh|đi học|sv|tân sinh viên)\b", lower):
         purpose = "Học sinh, Sinh viên"
-    elif re.search(r"\b(dịch vụ|grab|be|giao hàng|ship|chạy xe ôm|shipper)\b", lower):
+    elif re.search(r"\b(dịch vụ|grab|be|giao hàng|ship|chạy xe ôm|shipper|xe ôm công nghệ)\b", lower):
         purpose = "Chạy dịch vụ (Grab/Be/Giao hàng)"
-    elif re.search(r"\b(phượt|thể thao|tốc độ|phân khối|bốc|mạnh mẽ|đua)\b", lower):
+    elif re.search(r"\b(phượt|thể thao|tốc độ|phân khối|bốc|mạnh mẽ|đua|côn tay|nam tính|bụi)\b", lower):
         purpose = "Đi phượt, Thể thao & Đam mê tốc độ"
-    elif re.search(r"\b(thời trang|sang trọng|cao cấp|dạo phố|sang|quý phái|thanh lịch)\b", lower):
+    elif re.search(r"\b(thời trang|sang trọng|cao cấp|dạo phố|sang|quý phái|thanh lịch|sh|vespa|đẳng cấp)\b", lower):
         purpose = "Thời trang, Sang trọng & Cao cấp"
     else:
         purpose = "Đi làm, đi phố & Gia đình"
@@ -200,7 +385,6 @@ def _parse_fallback(text: str, options: Optional[Dict[str, List[str]]] = None) -
 
     # 3. Dung tích cốp (lít, L)
     trunk_liters = None
-    inferred_trunk = False
     trunk_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:lít|lit|l)\b", lower)
     if trunk_match:
         try:
@@ -208,8 +392,7 @@ def _parse_fallback(text: str, options: Optional[Dict[str, List[str]]] = None) -
         except ValueError:
             trunk_liters = None
     elif "cốp rộng" in lower or "cốp to" in lower or "cốp bự" in lower or "đựng vừa balo" in lower:
-        trunk_liters = 25.0
-        inferred_trunk = True
+        trunk_liters = 28.0
 
     # 4. Công suất (kW)
     power_kw = None
@@ -265,18 +448,11 @@ def _parse_fallback(text: str, options: Optional[Dict[str, List[str]]] = None) -
     if body and body not in options.get("Kiểu xe", []):
         body = None
 
-    budget_vnd = budget_trieu * 1_000_000.0 if budget_trieu is not None else None
-
-    return {
+    raw_extracted = {
         "purpose": purpose,
         "budget_trieu": budget_trieu,
-        "budget_vnd": budget_vnd,
-        "max_budget": budget_vnd,
-        "target_price": None,
         "power_kw": power_kw,
-        "min_power": power_kw,
         "trunk_liters": trunk_liters,
-        "min_trunk": trunk_liters,
         "year": year,
         "brand": brand,
         "fuel": fuel,
@@ -284,13 +460,15 @@ def _parse_fallback(text: str, options: Optional[Dict[str, List[str]]] = None) -
         "body_style": body,
         "condition": "Mới",
         "k": 5,
-        "source": "fallback",
-        "inferred_trunk": inferred_trunk,
+        "source": "fallback (suy luận ngữ cảnh)",
     }
+
+    complete_data, reason, _ = _infer_contextual_defaults(raw_extracted, text, options)
+    return complete_data
 
 
 # ---------------------------------------------------------------------------
-# 2. Hàm phân tích nhu cầu bằng Gemini (với fallback)
+# 3. Hàm phân tích nhu cầu bằng Gemini (với suy luận ngữ cảnh và fallback)
 # ---------------------------------------------------------------------------
 def parse_need(
     text: str,
@@ -300,8 +478,8 @@ def parse_need(
 ) -> Dict[str, Any]:
     """
     Phân tích nhu cầu tự nhiên của người dùng thành bộ tiêu chí chuẩn hóa.
-    Nếu Gemini khả dụng và thành công, trả về kết quả từ Gemini.
-    Nếu thất bại hoặc không có API key, tự động chuyển sang _parse_fallback.
+    Nếu người dùng nói chung chung, AI tự động suy luận và dự đoán các thông số
+    phù hợp theo ngữ cảnh thị trường Việt Nam thay vì trả về null/None.
     """
     if options is None:
         options = DEFAULT_OPTIONS
@@ -318,35 +496,54 @@ def parse_need(
     fuels_str = ", ".join(options.get("Nhiên liệu", []))
     body_str = ", ".join(options.get("Kiểu xe", []))
 
-    prompt = f"""Bạn là chuyên gia tư vấn xe máy. Hãy phân tích nhu cầu tự nhiên sau của người dùng và trích xuất thành định dạng JSON chuẩn.
+    prompt = f"""Bạn là chuyên gia tư vấn xe máy và hỗ trợ ra quyết định mua xe tại Việt Nam.
+Nhiệm vụ của bạn là phân tích mô tả nhu cầu tự nhiên của người dùng, xác định Mục đích sử dụng (purpose) phù hợp nhất, và SUY ĐOÁN/DỰ ĐOÁN CÁC THÔNG SỐ XE PHÙ HỢP THEO NGỮ CẢNH VÀ THỰC TẾ THỊ TRƯỜNG VIỆT NAM.
 
 QUY TẮC BẮT BUỘC:
-1. "purpose" BẮT BUỘC phải là một trong 5 mục đích sau:
-   [{purposes_str}]
-2. "brand" phải nằm trong danh sách: [{brands_str}] hoặc null nếu người dùng không yêu cầu hãng cụ thể.
-3. "fuel" phải nằm trong danh sách: [{fuels_str}] hoặc null.
-4. "body" (Kiểu xe) phải nằm trong danh sách: [{body_str}] hoặc null.
-5. "condition" luôn là "Mới" hoặc null.
-6. "budget_trieu": Ngân sách tối đa tính bằng TRIỆU VND (dạng số thực, vd: 45 triệu -> 45.0) hoặc null nếu không nói.
-7. "power_kw": Công suất tối đa mong muốn (Kw) hoặc null.
-8. "trunk_liters": Dung tích cốp mong muốn (Lít) hoặc null.
-9. "year": Năm sản xuất mong muốn (vd: 2024) hoặc null.
-10. Nếu người dùng đề cập nhiều lựa chọn như "xe ga hoặc xe điện", hãy ưu tiên kiểu xe cụ thể đầu tiên được nhắc đến hoặc để null nếu không chắc chắn.
+1. NẾU NGƯỜI DÙNG CÓ NÊU CỤ THỂ một tiêu chí (ví dụ: 'có 30 triệu', 'thích Yamaha', 'cần cốp rộng 25L', 'chạy xe điện'):
+   - BẮT BUỘC ưu tiên sử dụng chính xác giá trị người dùng yêu cầu.
+
+2. NẾU NGƯỜI DÙNG NÓI CHUNG CHUNG HOẶC KHÔNG NÊU RÕ một tiêu chí nào đó (ngân sách, hãng, kiểu xe, cốp, công suất, nhiên liệu):
+   - TUYỆT ĐỐI KHÔNG ĐỂ null! BẮT BUỘC DỰA VÀO NGỮ CẢNH, ĐỐI TƯỢNG VÀ MỤC ĐÍCH ĐỂ DỰ ĐOÁN THÔNG SỐ HỢP LÝ NHẤT THEO THỰC TẾ THỊ TRƯỜNG VIỆT NAM:
+   - 'purpose' BẮT BUỘC phải là 1 trong 5 mục đích sau:
+     [{purposes_str}]
+     + 'Học sinh, Sinh viên': Sinh viên, học sinh, đi học, tài chính khiêm tốn.
+       -> Dự đoán: budget_trieu=25.0, body='Xe số', brand='Honda', fuel='Xăng', trunk_liters=10.0, power_kw=6.5.
+     + 'Chạy dịch vụ (Grab/Be/Giao hàng)': Xe ôm công nghệ, shipper, giao hàng cày cuốc kiếm sống.
+       -> Dự đoán: budget_trieu=25.0, body='Xe số', brand='Honda', fuel='Xăng', trunk_liters=5.0, power_kw=6.5.
+     + 'Đi làm, đi phố & Gia đình': Nhân viên văn phòng, công sở, phụ nữ đi chợ, chở con, gia đình.
+       -> Nếu đi chợ/nữ/chở con: budget_trieu=42.0, body='Tay ga', brand='Honda', fuel='Xăng', trunk_liters=28.0, power_kw=7.5.
+       -> Nếu đi làm chung: budget_trieu=48.0, body='Tay ga', brand='Honda', fuel='Xăng', trunk_liters=20.0, power_kw=8.5.
+     + 'Đi phượt, Thể thao & Đam mê tốc độ': Phượt xa, tốc độ, thể thao, xe bốc, cá tính, nam tính.
+       -> Dự đoán: budget_trieu=55.0, body='Xe côn tay', brand='Honda', fuel='Xăng', trunk_liters=0.0, power_kw=11.5.
+     + 'Thời trang, Sang trọng & Cao cấp': Xe đẹp, tôn dáng, sang trọng, đẳng cấp, dạo phố, gặp khách hàng.
+       -> Dự đoán: budget_trieu=85.0, body='Tay ga', brand='Honda', fuel='Xăng', trunk_liters=20.0, power_kw=9.5.
+   - Nếu có nhắc đến xe điện / xanh / môi trường / tiết kiệm tiền xăng:
+       -> fuel='Điện', body='Xe điện', brand='VinFast', budget_trieu=35.0, trunk_liters=18.0.
+
+3. RÀNG BUỘC DANH MỤC:
+   - 'brand' phải nằm trong: [{brands_str}]
+   - 'fuel' phải nằm trong: [{fuels_str}]
+   - 'body' phải nằm trong: [{body_str}]
+   - 'condition' luôn là 'Mới'
+   - 'year' dự đoán là 2024
+   - 'inferred_reason': 1 câu tiếng Việt giải thích lý do AI dự đoán các thông số này dựa trên ngữ cảnh người dùng.
 
 Nhu cầu của người dùng:
 "{text}"
 
 Chỉ trả về DUY NHẤT một khối JSON hợp lệ theo đúng cấu trúc mẫu sau (không kèm giải thích bên ngoài):
 {{
-  "purpose": "Đi làm, đi phố & Gia đình",
-  "budget_trieu": 45.0,
-  "power_kw": null,
-  "trunk_liters": 25.0,
-  "year": null,
-  "brand": null,
-  "fuel": null,
-  "body": "Tay ga",
-  "condition": "Mới"
+  "purpose": "Học sinh, Sinh viên",
+  "budget_trieu": 25.0,
+  "power_kw": 6.5,
+  "trunk_liters": 10.0,
+  "year": 2024,
+  "brand": "Honda",
+  "fuel": "Xăng",
+  "body": "Xe số",
+  "condition": "Mới",
+  "inferred_reason": "Dựa trên nhu cầu là sinh viên, AI dự đoán ngân sách khoảng 25 triệu, kiểu xe số Honda tiết kiệm xăng và độ bền cao."
 }}
 """
     try:
@@ -411,18 +608,11 @@ Chỉ trả về DUY NHẤT một khối JSON hợp lệ theo đúng cấu trúc
             except (ValueError, TypeError):
                 year = None
 
-        budget_vnd = budget_trieu * 1_000_000.0 if budget_trieu is not None else None
-
-        return {
+        extracted = {
             "purpose": purpose,
             "budget_trieu": budget_trieu,
-            "budget_vnd": budget_vnd,
-            "max_budget": budget_vnd,
-            "target_price": None,
             "power_kw": power_kw,
-            "min_power": power_kw,
             "trunk_liters": trunk_liters,
-            "min_trunk": trunk_liters,
             "year": year,
             "brand": brand,
             "fuel": fuel,
@@ -431,8 +621,13 @@ Chỉ trả về DUY NHẤT một khối JSON hợp lệ theo đúng cấu trúc
             "condition": "Mới",
             "k": 5,
             "source": f"gemini ({used_model})",
-            "inferred_trunk": False,
+            "inferred_reason": data.get("inferred_reason"),
         }
+
+        # Bổ sung suy luận ngữ cảnh nếu Gemini vẫn để sót bất kỳ trường nào
+        complete_data, reason, _ = _infer_contextual_defaults(extracted, text, options)
+        return complete_data
+
     except Exception:
         return _parse_fallback(text, options)
 

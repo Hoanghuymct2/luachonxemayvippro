@@ -117,11 +117,12 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🎯 Hồ Sơ Mục Đích Sử Dụng")
     purposes_list = list(PURPOSE_WEIGHTS.keys())
+    curr_p = st.session_state.current_purpose
+    p_idx = purposes_list.index(curr_p) if curr_p in purposes_list else 0
     selected_purpose = st.selectbox(
         "Chọn hồ sơ nhu cầu:",
         options=purposes_list,
-        index=purposes_list.index(st.session_state.current_purpose),
-        key="sidebar_purpose_select",
+        index=p_idx,
     )
     st.session_state.current_purpose = selected_purpose
 
@@ -163,7 +164,7 @@ with st.container():
     with col_input:
         user_text = st.text_input(
             "Mô tả mong muốn của bạn bằng lời văn tự nhiên:",
-            placeholder="Ví dụ: Tôi là sinh viên có khoảng 25 triệu cần mua xe số Honda đi học tiết kiệm xăng",
+            placeholder="Ví dụ: Tôi là sinh viên cần mua xe đi học tiết kiệm xăng, hoặc xe cho nữ đi chợ",
             key="natural_user_input",
         )
     with col_btn:
@@ -172,7 +173,7 @@ with st.container():
         analyze_btn = st.button("🔍 Phân tích AI", use_container_width=True)
 
     if analyze_btn and user_text.strip():
-        with st.spinner("Gemini đang phân tích nhu cầu và trích xuất tiêu chí..."):
+        with st.spinner("Gemini đang phân tích nhu cầu và dự đoán thông số theo ngữ cảnh..."):
             extracted = gh.parse_need(user_text)
             st.session_state.extracted_info = extracted
 
@@ -181,15 +182,21 @@ with st.container():
             if detected_purpose in PURPOSE_WEIGHTS:
                 st.session_state.current_purpose = detected_purpose
 
-            st.success("✅ Đã trích xuất xong tiêu chí! Dữ liệu đã được tự động điền vào form bên dưới.")
+            st.rerun()
 
     if st.session_state.extracted_info:
         ext = st.session_state.extracted_info
-        st.caption(
-            f"ℹ️ **Kết quả trích xuất ({ext.get('source', 'gemini')}):** "
-            f"Mục đích: `{ext.get('purpose')}` | Ngân sách: `{ext.get('max_budget') or ext.get('Giá(VND)')}` | "
-            f"Hãng: `{ext.get('brand') or ext.get('Hãng')}` | Kiểu xe: `{ext.get('body_style') or ext.get('Kiểu xe')}` | "
-            f"Nhiên liệu: `{ext.get('fuel') or ext.get('Nhiên liệu')}`"
+        source_label = ext.get("source", "AI")
+        b_val = ext.get("budget_trieu")
+        b_str = f"{b_val:.0f} triệu VNĐ" if b_val else "Không giới hạn"
+
+        st.success(
+            f"🎯 **AI đã phân tích & dự đoán thông số theo ngữ cảnh ({source_label}):**\n\n"
+            f"- **Hồ sơ nhu cầu:** `{ext.get('purpose')}` *(đã tự động cập nhật vào Sidebar bên trái)*\n"
+            f"- **Ngân sách dự đoán:** `{b_str}` | **Hãng:** `{ext.get('brand')}` | **Kiểu xe:** `{ext.get('body') or ext.get('body_style')}`\n"
+            f"- **Nhiên liệu:** `{ext.get('fuel')}` | **Cốp tối thiểu:** `{ext.get('trunk_liters', 0):.0f}L` | **Công suất:** `{ext.get('power_kw', 0):.1f}kW` | **Năm:** `{ext.get('year', 2024)}`\n\n"
+            f"💡 **Lý giải ngữ cảnh:** *{ext.get('inferred_reason', 'Đã tự động điền các thông số phù hợp vào bộ lọc.')}*\n\n"
+            f"*(Bạn có thể tinh chỉnh lại bất kỳ thông số nào ở Bước 2 bên dưới trước khi bấm gợi ý)*"
         )
 
 # ---------------------------------------------------------------------------
@@ -199,14 +206,15 @@ st.markdown("### 2️⃣ Tinh Chỉnh Tiêu Chí Tìm Kiếm")
 
 ext = st.session_state.extracted_info or {}
 
-# Xác định giá trị mặc định cho form
-default_budget = 0.0
-raw_b = ext.get("max_budget") or ext.get("Giá(VND)")
-if raw_b is not None:
-    try:
-        default_budget = float(raw_b) / 1_000_000.0
-    except (ValueError, TypeError):
-        default_budget = 0.0
+# Xác định giá trị mặc định cho form từ kết quả AI / suy luận ngữ cảnh
+default_budget = float(ext.get("budget_trieu") or 0.0)
+if default_budget == 0.0:
+    raw_b = ext.get("max_budget") or ext.get("Giá(VND)")
+    if raw_b is not None:
+        try:
+            default_budget = float(raw_b) / 1_000_000.0
+        except (ValueError, TypeError):
+            default_budget = 0.0
 
 brands_list = ["Không yêu cầu"] + recommender.unique_values("Hãng")
 fuels_list = ["Không yêu cầu"] + recommender.unique_values("Nhiên liệu")
@@ -214,7 +222,15 @@ body_styles_list = ["Không yêu cầu"] + recommender.unique_values("Kiểu xe"
 
 brand_default = ext.get("brand") or ext.get("Hãng") or "Không yêu cầu"
 fuel_default = ext.get("fuel") or ext.get("Nhiên liệu") or "Không yêu cầu"
-body_default = ext.get("body_style") or ext.get("Kiểu xe") or "Không yêu cầu"
+body_default = ext.get("body_style") or ext.get("body") or ext.get("Kiểu xe") or "Không yêu cầu"
+trunk_default = float(ext.get("min_trunk") or ext.get("trunk_liters") or ext.get("Dung tích cốp (L)") or 0.0)
+power_default = float(ext.get("min_power") or ext.get("power_kw") or ext.get("Công suất tối đa (Kw)") or 0.0)
+
+year_options = ["Không yêu cầu", 2024, 2023, 2022]
+year_val = ext.get("year")
+year_default_idx = 0
+if year_val in year_options:
+    year_default_idx = year_options.index(year_val)
 
 with st.form("filter_criteria_form"):
     col1, col2, col3 = st.columns(3)
@@ -235,8 +251,8 @@ with st.form("filter_criteria_form"):
         )
         target_year = st.selectbox(
             "Năm sản xuất:",
-            options=["Không yêu cầu", 2024, 2023, 2022],
-            index=0,
+            options=year_options,
+            index=year_default_idx,
         )
 
     with col2:
@@ -254,7 +270,7 @@ with st.form("filter_criteria_form"):
             "Dung tích cốp tối thiểu (Lít):",
             min_value=0.0,
             max_value=50.0,
-            value=float(ext.get("min_trunk") or ext.get("trunk_liters") or ext.get("Dung tích cốp (L)") or 0.0),
+            value=float(trunk_default),
             step=1.0,
             help="Nhập 0 nếu không yêu cầu / bỏ qua tiêu chí cốp xe.",
         )
@@ -264,7 +280,7 @@ with st.form("filter_criteria_form"):
             "Công suất động cơ mong muốn (kW):",
             min_value=0.0,
             max_value=150.0,
-            value=float(ext.get("min_power") or ext.get("power_kw") or ext.get("Công suất tối đa (Kw)") or 0.0),
+            value=float(power_default),
             step=0.5,
             help="Nhập 0 nếu không yêu cầu / bỏ qua tiêu chí công suất.",
         )
